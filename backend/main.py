@@ -1,3 +1,11 @@
+import sys
+import os
+import traceback
+
+if sys.stdout is None: sys.stdout = open(os.devnull, 'w')
+if sys.stderr is None: sys.stderr = open(os.devnull, 'w')
+if sys.stdin is None: sys.stdin = open(os.devnull, 'r')
+
 from fastapi import FastAPI, HTTPException, Form, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
@@ -821,6 +829,11 @@ async def import_gguf_model(req: ImportModelRequest):
 
 # --- BACKEND DATABASE SETUP (SQLite) ---
 def get_app_data_dir():
+    custom_path = os.environ.get("BIFROST_DATA_PATH")
+    if custom_path:
+        os.makedirs(custom_path, exist_ok=True)
+        return custom_path
+
     app_name = "Bifrost"
     if platform.system() == "Windows":
         base_path = os.environ.get("APPDATA", os.path.expanduser("~"))
@@ -1130,6 +1143,28 @@ async def update_chat_messages(chat_id: str, req: MessagesUpdateSchema):
         conn.close()
     return {"status": "SUCCESS"}
 
+class ChatRenameSchema(BaseModel):
+    name: str
+
+@app.patch("/api/chats/{chat_id}")
+async def rename_chat_session(chat_id: str, req: ChatRenameSchema):
+    conn = sqlite3.connect(DATABASE_FILE)
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT id FROM chats WHERE id = ?", (chat_id,))
+        if not cursor.fetchone():
+            raise HTTPException(status_code=404, detail="Chat session not found")
+        cursor.execute("UPDATE chats SET name = ? WHERE id = ?", (req.name, chat_id))
+        conn.commit()
+    except HTTPException:
+        raise
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
+    return {"status": "SUCCESS"}
+
 @app.delete("/api/chats/{chat_id}")
 async def delete_chat_session(chat_id: str):
     conn = sqlite3.connect(DATABASE_FILE)
@@ -1143,3 +1178,15 @@ async def delete_chat_session(chat_id: str):
     finally:
         conn.close()
     return {"status": "SUCCESS"}
+
+
+import multiprocessing
+import uvicorn
+import traceback
+import asyncio
+if sys.platform == 'win32':
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
+if __name__ == '__main__':
+    multiprocessing.freeze_support()
+    uvicorn.run(app, host="127.0.0.1", port=8000, log_config=None)

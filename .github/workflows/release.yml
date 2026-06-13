@@ -46,7 +46,18 @@ jobs:
       - name: Install Root Dependencies
         run: npm install
 
+      - name: Install Linux Dependencies
+        if: matrix.os == 'ubuntu-latest'
+        run: sudo apt-get update && sudo apt-get install -y libfuse2
+
+      - name: Clean Old Builds
+        run: |
+          rm -rf backend/dist
+          rm -rf backend/build
+          rm -rf release
+        shell: bash
+
       - name: Build and Release
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: ${{ matrix.script }} -- -p always

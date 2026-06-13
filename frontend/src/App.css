@@ -34,17 +34,20 @@ body {
   height: 100vh;
   width: 100vw;
   position: relative;
+  overflow: hidden;
 }
 
 /* LEFT SIDEBAR */
 .left-sidebar {
   width: 270px;
+  flex-shrink: 0;
   background-color: var(--panel-blue);
   border-right: 4px solid var(--panel-border);
   display: flex;
   flex-direction: column;
   padding: 15px;
   box-sizing: border-box;
+  overflow-y: auto;
 }
 
 .new-chat-btn {
@@ -126,6 +129,7 @@ body {
 /* CENTER PANE */
 .center-pane {
   flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   background-color: var(--bg-dark-blue);
@@ -138,8 +142,34 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
   border-bottom: 4px solid var(--panel-border);
   background-color: var(--panel-blue);
+  min-height: 46px;
+}
+
+.top-bar-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  min-width: 0;
+  flex: 1 1 0;
+}
+
+.top-bar-right {
+  display: flex;
+  gap: 10px;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.top-bar-label {
+  color: var(--text-dim);
+  font-size: 1.1rem;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .retro-btn {
@@ -147,6 +177,7 @@ body {
   background-color: #05060a;
   color: var(--text-light);
   border: 2px solid var(--panel-border);
+  white-space: nowrap;
   font-size: 1.2rem;
   padding: 5px 10px;
   cursor: pointer;
@@ -166,6 +197,9 @@ body {
   padding: 5px 10px;
   cursor: pointer;
   outline: none;
+  min-width: 0;
+  max-width: 280px;
+  text-overflow: ellipsis;
 }
 
 .chat-feed {
@@ -179,7 +213,7 @@ body {
 
 /* Chat Input Bottom */
 .input-area {
-  padding: 20px 30px;
+  padding: 15px 20px;
   background-color: var(--bg-dark-blue);
   position: relative;
 }
@@ -349,6 +383,7 @@ body {
 /* RIGHT SIDEBAR */
 .right-sidebar {
   width: 310px;
+  flex-shrink: 0;
   background-color: var(--panel-blue);
   border-left: 4px solid var(--panel-border);
   display: flex;
@@ -527,5 +562,37 @@ body {
 @keyframes spin {
   to {
     transform: rotate(360deg);
+  }
+}
+
+/* Responsive: narrow center pane (e.g. both sidebars open on small screen) */
+@media (max-width: 900px) {
+  .top-bar {
+    padding: 8px 12px;
+  }
+  .top-bar-label {
+    display: none;
+  }
+  .input-area {
+    padding: 10px 12px;
+  }
+  .chat-feed {
+    padding: 20px 15px;
+  }
+  .settings-page {
+    padding: 20px 15px;
+  }
+}
+
+@media (max-width: 700px) {
+  .left-sidebar {
+    width: 220px;
+  }
+  .right-sidebar {
+    width: 250px;
+  }
+  .project-selector {
+    max-width: 180px;
+    font-size: 1rem;
   }
 }

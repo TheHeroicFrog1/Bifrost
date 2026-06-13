@@ -50,6 +50,8 @@ function App() {
   const [activeProjectId, setActiveProjectId] = useState('w_default');
   const activeProject = projects.find(p => p.id === activeProjectId) || projects[0];
   const currentMessages = activeProject ? activeProject.messages : [];
+  const [contextMenu, setContextMenu] = useState({ visible: false, x: 0, y: 0, projectId: null });
+  const [promptModal, setPromptModal] = useState({ visible: false, title: '', value: '', type: '', data: null });
 
   // 3. Dynamic Model Discovery States
   const [availableModels, setAvailableModels] = useState([]);
@@ -74,6 +76,50 @@ function App() {
 
   // 5c. Backend Sync & Init State
   const [isInitialized, setIsInitialized] = useState(false);
+
+  // 5d. Electron Client Settings
+  const [electronCloseBehavior, setElectronCloseBehavior] = useState('ask');
+  const [electronDataPath, setElectronDataPath] = useState('');
+
+  useEffect(() => {
+    if (window.require) {
+      try {
+        const { ipcRenderer } = window.require('electron');
+        ipcRenderer.invoke('get-settings').then(s => {
+          if (s && s.closeBehavior) setElectronCloseBehavior(s.closeBehavior);
+          if (s && s.dataPath) setElectronDataPath(s.dataPath);
+        });
+      } catch (e) {}
+    }
+  }, []);
+
+  const handleCloseBehaviorChange = (behavior) => {
+    setElectronCloseBehavior(behavior);
+    if (window.require) {
+      try {
+        const { ipcRenderer } = window.require('electron');
+        ipcRenderer.invoke('get-settings').then(s => {
+          ipcRenderer.send('save-settings', { ...s, closeBehavior: behavior });
+        });
+      } catch (e) {}
+    }
+  };
+
+  const handleSelectDataPath = async () => {
+    if (window.require) {
+      try {
+        const { ipcRenderer } = window.require('electron');
+        const selectedPath = await ipcRenderer.invoke('select-directory');
+        if (selectedPath) {
+          setElectronDataPath(selectedPath);
+          ipcRenderer.invoke('get-settings').then(s => {
+            ipcRenderer.send('save-settings', { ...s, dataPath: selectedPath });
+          });
+          alert("Data path updated. Please restart the application for changes to take effect.");
+        }
+      } catch (e) {}
+    }
+  };
 
   // Helper to sync project messages & stats to DB
   const syncProjectMessages = async (projectId, messages, tokenUsage, filesIndexed, contextLines) => {
@@ -474,32 +520,129 @@ function App() {
     setToggles(prev => ({ ...prev, [key]: !prev[key] }));
   };
 
-  const handleCreateProject = async () => {
-    const pName = prompt("ENTER NEW SYSTEM WORKSPACE CODE IDENTIFIER:");
-    if (!pName) return;
-    const newId = `w_${Date.now()}`;
-    const newProj = {
-      id: newId,
-      name: pName,
-      filesIndexed: 0,
-      contextLines: 0,
-      messages: [],
-      tokenUsage: 0
-    };
-    setProjects(prev => [...prev, newProj]);
-    setActiveProjectId(newId);
-    setCurrentView('chat');
+  const handleCreateProject = () => {
+    setPromptModal({ visible: true, title: 'ENTER NEW SYSTEM WORKSPACE CODE IDENTIFIER:', value: '', type: 'create_workspace', data: null });
+  };
 
-    try {
-      await fetch('http://localhost:8000/api/chats', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newProj)
-      });
-    } catch (err) {
-      console.error("Failed to create workspace on backend", err);
+  const handleRenameProject = (id) => {
+    const proj = projects.find(p => p.id === id);
+    if (!proj) return;
+    setPromptModal({ visible: true, title: 'ENTER NEW WORKSPACE NAME:', value: proj.name, type: 'rename_workspace', data: { id, oldName: proj.name } });
+  };
+
+  const handlePromptSubmit = async () => {
+    const { type, value, data } = promptModal;
+    setPromptModal({ visible: false, title: '', value: '', type: '', data: null });
+    
+    if (!value.trim()) return;
+
+    if (type === 'create_workspace') {
+      const newId = `w_${Date.now()}`;
+      const newProj = {
+        id: newId,
+        name: value.trim(),
+        filesIndexed: 0,
+        contextLines: 0,
+        messages: [],
+        tokenUsage: 0
+      };
+      setProjects(prev => [...prev, newProj]);
+      setActiveProjectId(newId);
+      setCurrentView('chat');
+
+      try {
+        await fetch('http://localhost:8000/api/chats', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(newProj)
+        });
+      } catch (err) {
+        console.error("Failed to create workspace on backend", err);
+      }
+    } else if (type === 'rename_workspace') {
+      if (value.trim() === data.oldName) return;
+      
+      setProjects(prev => prev.map(p => p.id === data.id ? { ...p, name: value.trim() } : p));
+      try {
+        await fetch(`http://localhost:8000/api/chats/${data.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: value.trim() })
+        });
+      } catch (err) {
+        console.error("Failed to rename workspace on backend", err);
+      }
+    } else if (type === 'change_dir') {
+      try {
+        const res = await fetch('http://localhost:8000/api/workspace/directory', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path: value.trim() })
+        });
+        if (res.ok) {
+          const resData = await res.json();
+          setActiveDir(resData.directory);
+          const systemMsg = {
+            role: 'system',
+            content: `[SYS_EVENT]: Active working directory updated to: "${resData.directory}". Found ${resData.files_count} file indexes.`
+          };
+          
+          const targetProj = projects.find(p => p.id === activeProjectId);
+          if (targetProj) {
+            const updatedMsg = [...targetProj.messages, systemMsg];
+            const newFilesIndexed = resData.files_count;
+            
+            setProjects(prev => prev.map(p => {
+              if (p.id === activeProjectId) {
+                return { ...p, filesIndexed: newFilesIndexed, messages: updatedMsg };
+              }
+              return p;
+            }));
+            
+            syncProjectMessages(activeProjectId, updatedMsg, undefined, newFilesIndexed);
+          }
+        } else {
+          const err = await res.json();
+          alert(`Failed to change directory: ${err.detail || 'Directory unreachable'}`);
+        }
+      } catch (err) {
+        console.error(err);
+        alert("Connection error setting system directory.");
+      }
     }
   };
+
+  const handleDeleteProject = async (id) => {
+    if (projects.length <= 1) {
+      alert("CANNOT DELETE LAST REMAINING WORKSPACE.");
+      return;
+    }
+    if (!window.confirm("WARNING: PERMANENTLY DELETE WORKSPACE AND ALL LOGS?")) return;
+    
+    setProjects(prev => prev.filter(p => p.id !== id));
+    if (activeProjectId === id) {
+      const remaining = projects.filter(p => p.id !== id);
+      if (remaining.length > 0) setActiveProjectId(remaining[0].id);
+    }
+    try {
+      await fetch(`http://localhost:8000/api/chats/${id}`, {
+        method: 'DELETE'
+      });
+    } catch (err) {
+      console.error("Failed to delete workspace on backend", err);
+    }
+  };
+
+  const handleContextMenu = (e, id) => {
+    e.preventDefault();
+    setContextMenu({ visible: true, x: e.clientX, y: e.clientY, projectId: id });
+  };
+  
+  useEffect(() => {
+    const handleClick = () => setContextMenu(prev => ({ ...prev, visible: false }));
+    window.addEventListener('click', handleClick);
+    return () => window.removeEventListener('click', handleClick);
+  }, []);
 
   const handleNewSessionBlock = () => {
     const timeStr = new Date().toLocaleTimeString();
@@ -602,50 +745,8 @@ function App() {
     reader.readAsText(file);
   };
 
-  // Changes active working directory of backend
-  const handleDirectoryPicker = async () => {
-    const newPath = prompt("ENTER NEW ACTIVE SYSTEM WORKING DIRECTORY PATH:", activeDir);
-    if (!newPath) return;
-    try {
-      const res = await fetch('http://localhost:8000/api/workspace/directory', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path: newPath })
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setActiveDir(data.directory);
-        const systemMsg = {
-          role: 'system',
-          content: `[SYS_EVENT]: Active working directory updated to: "${data.directory}". Found ${data.files_count} file indexes.`
-        };
-        
-        const targetProj = projects.find(p => p.id === activeProjectId);
-        if (targetProj) {
-          const updatedMsg = [...targetProj.messages, systemMsg];
-          const newFilesIndexed = data.files_count;
-          
-          setProjects(prev => prev.map(p => {
-            if (p.id === activeProjectId) {
-              return {
-                ...p,
-                filesIndexed: newFilesIndexed,
-                messages: updatedMsg
-              };
-            }
-            return p;
-          }));
-          
-          syncProjectMessages(activeProjectId, updatedMsg, undefined, newFilesIndexed);
-        }
-      } else {
-        const err = await res.json();
-        alert(`Failed to change directory: ${err.detail || 'Directory unreachable'}`);
-      }
-    } catch (err) {
-      console.error(err);
-      alert("Connection error setting system directory.");
-    }
+  const handleSetDirectory = () => {
+    setPromptModal({ visible: true, title: 'ENTER NEW ACTIVE SYSTEM WORKING DIRECTORY PATH:', value: activeDir, type: 'change_dir', data: null });
   };
 
   // Structured System Panic & Markdown Stream Evaluation Node
@@ -1105,15 +1206,12 @@ function App() {
         <div className="left-sidebar" onClick={(e) => e.stopPropagation()}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
             <h1 style={{ color: 'var(--accent-red)', textShadow: '0 0 10px rgba(255,0,85,0.5)', margin: '0', cursor: 'pointer', letterSpacing: '1.5px' }} onClick={(e) => { e.stopPropagation(); setCurrentView('chat'); }}>BIFROST</h1>
-            <div style={{ display: 'flex', gap: '5px' }}>
-              <button className="retro-btn" title="Settings" onClick={(e) => { e.stopPropagation(); setCurrentView('settings'); }} style={{ padding: '2px 6px', borderColor: currentView === 'settings' ? 'var(--accent-red)' : '' }}>⚙️</button>
-              <button className="retro-btn" onClick={(e) => { e.stopPropagation(); setLeftOpen(false); }} style={{ padding: '2px 6px' }}>◀</button>
-            </div>
+            <button className="retro-btn" onClick={(e) => { e.stopPropagation(); setLeftOpen(false); }} style={{ padding: '2px 6px' }}>◀</button>
           </div>
 
           <div style={{ flex: 1, overflowY: 'auto' }}>
             <div className="nav-section">// SERVICES</div>
-            <div className={`nav-item ${currentView === 'settings' ? 'active' : ''}`} onClick={(e) => { e.stopPropagation(); setCurrentView('settings'); }}>⚙️ API & MODELS</div>
+            <div className={`nav-item ${currentView === 'settings' ? 'active' : ''}`} onClick={(e) => { e.stopPropagation(); setCurrentView('settings'); }}>⚙️ SETTINGS & API</div>
             <div className={`nav-item ${currentView === 'model-setup' ? 'active' : ''}`} onClick={(e) => { e.stopPropagation(); setCurrentView('model-setup'); }}>🔍 LOCAL SCAN</div>
             <div className="nav-item" style={{ color: 'var(--terminal-green)' }} onClick={(e) => { e.stopPropagation(); syncModels(); }}>⚡ RE-SYNC</div>
 
@@ -1123,7 +1221,12 @@ function App() {
 
             <div className="nav-section">// WORKSPACES</div>
             {projects.map(p => (
-              <div key={p.id} className={`project-nav-item ${activeProjectId === p.id && currentView === 'chat' ? 'active' : ''}`} onClick={(e) => { e.stopPropagation(); setActiveProjectId(p.id); setCurrentView('chat'); }}>
+              <div 
+                key={p.id} 
+                className={`project-nav-item ${activeProjectId === p.id && currentView === 'chat' ? 'active' : ''}`} 
+                onClick={(e) => { e.stopPropagation(); setActiveProjectId(p.id); setCurrentView('chat'); }}
+                onContextMenu={(e) => handleContextMenu(e, p.id)}
+              >
                 <span style={{ color: activeProjectId === p.id ? 'var(--terminal-green)' : 'var(--text-dim)', fontSize: '0.75rem', marginTop: '3px' }}>●</span>
                 <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                   <div className="project-name">{p.name}</div>
@@ -1134,6 +1237,35 @@ function App() {
             <button className="retro-btn" onClick={(e) => { e.stopPropagation(); handleCreateProject(); }} style={{ width: '100%', marginTop: '8px', fontSize: '1.1rem', justifyContent: 'center' }}>
               + CREATE WORKSPACE
             </button>
+            
+            {contextMenu.visible && (
+              <div 
+                className="context-menu" 
+                style={{ 
+                  position: 'fixed', 
+                  top: contextMenu.y, 
+                  left: contextMenu.x, 
+                  backgroundColor: 'var(--panel-blue)', 
+                  border: '2px solid var(--panel-border)', 
+                  zIndex: 9999, 
+                  boxShadow: '4px 4px 0px rgba(0,0,0,0.8)' 
+                }}
+              >
+                <div 
+                  className="mention-item" 
+                  onClick={() => handleRenameProject(contextMenu.projectId)}
+                >
+                  Rename Workspace
+                </div>
+                <div 
+                  className="mention-item" 
+                  onClick={() => handleDeleteProject(contextMenu.projectId)}
+                  style={{ color: 'var(--accent-red)' }}
+                >
+                  Delete Workspace
+                </div>
+              </div>
+            )}
 
             <div className="nav-section">// SYSTEM STATUS</div>
             <div className={`nav-item ${currentView === 'docker' ? 'active' : ''}`} onClick={(e) => { e.stopPropagation(); setCurrentView('docker'); }}>⚓ SERVICES</div>
@@ -1154,12 +1286,11 @@ function App() {
       {/* 2. CENTER WORKING VIEWPORT */}
       <div className="center-pane">
         <div className="top-bar">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <div className="top-bar-left">
             {!leftOpen && <button className="retro-btn" onClick={() => setLeftOpen(true)}>▶ MENU</button>}
             
             {currentView === 'chat' ? (
               <>
-                <span style={{ color: 'var(--text-dim)', fontSize: '1.2rem', marginLeft: '10px' }}>ACTIVE MODEL:</span>
                 <select className="project-selector" value={selectedModel} onChange={(e) => setSelectedModel(e.target.value)} style={{ color: 'var(--terminal-green)', borderColor: 'var(--terminal-green)' }}>
                   {visibleAvailableModels.length === 0 ? (
                     <option value="">NO ACTIVE MODELS (CONNECT IN SETTINGS)</option>
@@ -1179,11 +1310,11 @@ function App() {
                   )}
                 </select>
                 
-                <span style={{ color: 'var(--text-dim)', fontSize: '1rem', marginLeft: '15px' }}>WORKSPACE:</span>
                 <select className="project-selector" value={activeProjectId} onChange={(e) => setActiveProjectId(e.target.value)}>
                   {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                 </select>
               </>
+
             ) : (
               <span style={{ color: 'var(--accent-red)', fontSize: '1.2rem', fontWeight: 'bold' }}>
                 SETTINGS // {currentView.toUpperCase()}
@@ -1191,7 +1322,7 @@ function App() {
             )}
           </div>
           
-          <div style={{ display: 'flex', gap: '10px' }}>
+          <div className="top-bar-right">
             {currentView === 'chat' ? (
               <>
                 <button className="retro-btn" onClick={(e) => { e.stopPropagation(); handleExportLogs(); }} title="Export message history">
@@ -1212,9 +1343,48 @@ function App() {
         {currentView === 'settings' && (
           <div className="settings-page" onClick={(e) => e.stopPropagation()}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '25px' }}>
-              <h2 style={{ color: 'var(--accent-red)', textShadow: '0 0 8px rgba(255,0,85,0.3)', textTransform: 'uppercase', margin: 0 }}>API & Models</h2>
+              <h2 style={{ color: 'var(--accent-red)', textShadow: '0 0 8px rgba(255,0,85,0.3)', textTransform: 'uppercase', margin: 0 }}>SETTINGS & API</h2>
               <button className="retro-btn" onClick={(e) => { e.stopPropagation(); setCurrentView('chat'); }} style={{ borderColor: 'var(--accent-red)', color: 'var(--accent-red)' }}>◀ BACK TO WORKSPACE</button>
             </div>
+
+            {/* === SECTION 0: CLIENT SETTINGS === */}
+            {window.require && (
+              <div style={{ marginBottom: '35px' }}>
+                <div className="card-title" style={{ fontSize: '1.1rem', marginBottom: '10px' }}>APP BEHAVIOR</div>
+                <div className="retro-card">
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      <label style={{ fontSize: '0.9rem', color: 'var(--text-dim)' }}>WHEN CLOSING THE WINDOW:</label>
+                      <select 
+                        value={electronCloseBehavior} 
+                        onChange={(e) => handleCloseBehaviorChange(e.target.value)}
+                        className="project-selector" 
+                        style={{ width: '100%', maxWidth: '300px' }}
+                      >
+                        <option value="ask">Ask every time</option>
+                        <option value="background">Run in background (Tray)</option>
+                        <option value="quit">Close completely</option>
+                      </select>
+                    </div>
+                    
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      <label style={{ fontSize: '0.9rem', color: 'var(--text-dim)' }}>DATA STORAGE PATH:</label>
+                      <div style={{ display: 'flex', gap: '10px', alignItems: 'center', maxWidth: '500px' }}>
+                        <input 
+                          type="text" 
+                          value={electronDataPath || 'Default (AppData)'} 
+                          readOnly 
+                          className="project-selector" 
+                          style={{ flex: 1, backgroundColor: 'var(--panel-blue)', cursor: 'default' }} 
+                        />
+                        <button className="retro-btn" onClick={handleSelectDataPath}>CHANGE</button>
+                      </div>
+                      <span style={{ fontSize: '0.8rem', color: 'var(--accent-red)' }}>* Restart required after changing</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* === SECTION 1: API PROVIDERS === */}
             <div className="card-title" style={{ fontSize: '1.1rem', marginBottom: '10px' }}>API PROVIDERS</div>
@@ -1877,7 +2047,7 @@ function App() {
                 />
                 <div className="input-icons">
                   <span style={{ cursor: 'pointer', color: 'var(--terminal-green)' }} onClick={() => fileInputRef.current?.click()} title="Add file">📎</span>
-                  <div className="directory-indicator" onClick={handleDirectoryPicker} title={`Active Directory: ${activeDir}. Click to change.`}>
+                  <div className="directory-indicator" onClick={handleSetDirectory} title={`Active Directory: ${activeDir}. Click to change.`}>
                     DIR
                   </div>
                 </div>
@@ -2068,6 +2238,27 @@ function App() {
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+      
+      {promptModal.visible && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', backgroundColor: 'rgba(0,0,0,0.8)', zIndex: 10000, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+          <div className="retro-card" style={{ width: '400px', backgroundColor: 'var(--panel-blue)', border: '2px solid var(--terminal-green)', padding: '20px' }}>
+            <h3 style={{ color: 'var(--terminal-green)', marginTop: 0 }}>{promptModal.title}</h3>
+            <input 
+              type="text" 
+              value={promptModal.value} 
+              onChange={(e) => setPromptModal(prev => ({ ...prev, value: e.target.value }))}
+              onKeyDown={(e) => { if (e.key === 'Enter') handlePromptSubmit(); if (e.key === 'Escape') setPromptModal(prev => ({ ...prev, visible: false })); }}
+              className="project-selector" 
+              style={{ width: '100%', boxSizing: 'border-box', marginBottom: '15px' }} 
+              autoFocus
+            />
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+              <button className="retro-btn" onClick={() => setPromptModal(prev => ({ ...prev, visible: false }))}>CANCEL</button>
+              <button className="retro-btn" style={{ borderColor: 'var(--terminal-green)', color: 'var(--terminal-green)' }} onClick={handlePromptSubmit}>OK</button>
+            </div>
           </div>
         </div>
       )}

@@ -8,8 +8,8 @@
     "start": "electron .",
     "build:frontend": "cd frontend && npm install && npm run build",
     "build:backend:win": "cd backend && python -m PyInstaller --name bifrost-backend --noconsole --onefile main.py",
-    "build:backend:mac": "cd backend && python3 -m PyInstaller --name bifrost-backend --onefile main.py",
-    "build:backend:linux": "cd backend && python3 -m PyInstaller --name bifrost-backend --onefile main.py",
+    "build:backend:mac": "cd backend && python -m PyInstaller --name bifrost-backend --onefile main.py",
+    "build:backend:linux": "cd backend && python -m PyInstaller --name bifrost-backend --onefile main.py",
     "package:win": "npm run build:frontend && npm run build:backend:win && electron-builder --win",
     "package:mac": "npm run build:frontend && npm run build:backend:mac && electron-builder --mac",
     "package:linux": "npm run build:frontend && npm run build:backend:linux && electron-builder --linux",
@@ -20,13 +20,13 @@
   "build": {
     "appId": "com.bifrost.app",
     "productName": "Bifrost",
-    "icon": "build/icon.png",
     "directories": {
       "output": "release"
     },
     "files": [
       "main.js",
-      "frontend/dist/**/*"
+      "frontend/dist/**/*",
+      "build/**/*"
     ],
     "extraResources": [
       {
@@ -43,11 +43,18 @@
         "zip"
       ]
     },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    },
     "mac": {
       "target": [
         "dmg",
         "zip"
-      ]
+      ],
+      "identity": null
     },
     "linux": {
       "target": [
