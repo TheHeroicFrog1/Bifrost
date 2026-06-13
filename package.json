@@ -1,0 +1,47 @@
+{
+  "name": "bifrost",
+  "version": "1.0.0",
+  "description": "Bifrost Multi-Agent AI Interface",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build:frontend": "cd frontend && npm install && npm run build",
+    "build:backend:win": "cd backend && python -m PyInstaller --name bifrost-backend --onefile main.py",
+    "build:backend:mac": "cd backend && python3 -m PyInstaller --name bifrost-backend --onefile main.py",
+    "build:backend:linux": "cd backend && python3 -m PyInstaller --name bifrost-backend --onefile main.py",
+    "package:win": "npm run build:frontend && npm run build:backend:win && electron-builder --win",
+    "package:mac": "npm run build:frontend && npm run build:backend:mac && electron-builder --mac",
+    "package:linux": "npm run build:frontend && npm run build:backend:linux && electron-builder --linux"
+  },
+  "build": {
+    "appId": "com.bifrost.app",
+    "productName": "Bifrost",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "main.js",
+      "frontend/dist/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "backend/dist",
+        "to": "backend-dist",
+        "filter": ["**/*"]
+      }
+    ],
+    "win": {
+      "target": ["nsis", "zip"]
+    },
+    "mac": {
+      "target": ["dmg", "zip"]
+    },
+    "linux": {
+      "target": ["AppImage", "deb"]
+    }
+  },
+  "devDependencies": {
+    "electron": "^29.0.0",
+    "electron-builder": "^24.9.1"
+  }
+}
