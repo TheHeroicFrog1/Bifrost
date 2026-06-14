@@ -12,6 +12,10 @@
 
 <hr />
 
+<div align="center">
+  <img src="build/demo.gif" alt="Bifrost App Demo" width="600" />
+</div>
+
 <h2>⚡ About Bifrost</h2>
 <p>Bifrost bridges the gap between powerful Python-based AI engines and a beautiful, fast desktop user interface. It runs as a unified application: the Electron UI handles the experience, while an embedded, compiled FastAPI/Python engine handles the heavy lifting in the background.</p>
 
@@ -70,3 +74,4 @@ Download the AppImage, make it executable, and launch it:</p>
 cd Bifrost
 npm install
 pip install -r backend/requirements.txt</code></pre>
+
