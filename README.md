@@ -12,11 +12,11 @@
 
 <hr />
 
-<p align="center">
-  <a href="demo.mp4">
-    <img src="icon.png" alt="Bifrost Demo">
+<div align="center">
+  <a href="build/demo.mp4">
+    <img src="build/icon.png" alt="Click to watch Bifrost Demo" width="600" />
   </a>
-</p>
+</div>
 
 <h2>⚡ About Bifrost</h2>
 <p>Bifrost bridges the gap between powerful Python-based AI engines and a beautiful, fast desktop user interface. It runs as a unified application: the Electron UI handles the experience, while an embedded, compiled FastAPI/Python engine handles the heavy lifting in the background.</p>
