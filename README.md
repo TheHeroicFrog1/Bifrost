@@ -13,9 +13,7 @@
 <hr />
 
 <div align="center">
-  <a href="https://github.com/TheHeroicFrog1/Bifrost/blob/main/build/demo.mp4">
-    <img src="build/thumbnail.png" alt="Bifrost Demo" width="800">
-  </a>
+  <video src="https://github.com/user-attachments/assets/fcd38ef3-e7b0-434b-b85d-202760524a54" width="600" controls></video>
 </div>
 
 <h2>⚡ About Bifrost</h2>
