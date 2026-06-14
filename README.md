@@ -13,7 +13,7 @@
 <hr />
 
 <div align="center">
-  <img src="build/demo.gif" alt="Bifrost App Demo" width="600" />
+  <video src="build/demo.mp4" autoplay loop muted playsinline width="800"></video>
 </div>
 
 <h2>⚡ About Bifrost</h2>
