@@ -13,7 +13,7 @@
 <hr />
 
 <div align="center">
-  <video src="https://raw.githubusercontent.com/TheHeroicFrog1/Bifrost/main/build/demo.mp4" autoplay loop muted playsinline width="800"></video>
+  <img src="build/demo.gif" alt="Bifrost App Demo" width="800" />
 </div>
 
 <h2>⚡ About Bifrost</h2>
