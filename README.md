@@ -1,6 +1,6 @@
 <div align="center">
   <img src="build/icon.png" alt="Bifrost Logo" width="200" />
-  <h1>Bifrost AI</h1>
+  <h1>Bifrost </h1>
   <p>A powerful, cross-platform AI desktop interface with a local Python processing engine.</p>
   
   <a href="https://github.com/TheHeroicFrog1/Bifrost/releases/latest">
